@@ -206,7 +206,11 @@ class VoluntaryPlanServiceImplTest {
         ps.setMajorAdjustRisk(BigDecimal.valueOf(30));
         when(planSchoolMapper.selectByPlanIdOrdered(1)).thenReturn(List.of(ps));
         when(planSchoolMapper.insert(any())).thenReturn(1);
-        when(planSchoolMapper.selectByPlanIdOrdered(2)).thenReturn(List.of(ps));
+        when(scLiScoreMapper.selectOne(any())).thenReturn(null);
+        when(planSchoolMapper.selectMajorScoresForSchool(anyInt(), any()))
+                .thenReturn(Collections.emptyList());
+        when(schoolInfoMapper.selectById(anyInt())).thenReturn(null);
+        when(voluntaryPlanMapper.updateById(any())).thenReturn(1);
         when(planVersionLogMapper.insert(any())).thenReturn(1);
 
         Integer newId = voluntaryPlanService.copyPlan(1, "userA", "副本方案");
@@ -232,7 +236,10 @@ class VoluntaryPlanServiceImplTest {
         VoluntaryPlan plan = createPlan("userA");
         plan.setId(1);
         when(voluntaryPlanMapper.selectById(1)).thenReturn(plan);
+        when(planSchoolMapper.selectByPlanIdOrdered(1)).thenReturn(Collections.emptyList());
         when(planSchoolMapper.updateSortOrder(anyInt(), anyInt())).thenReturn(1);
+        when(voluntaryPlanMapper.updateById(any())).thenReturn(1);
+        when(planVersionLogMapper.insert(any())).thenReturn(1);
 
         SchoolReorderDTO dto = new SchoolReorderDTO();
         dto.setPlanId(1);

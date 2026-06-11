@@ -36,4 +36,7 @@ public class PlanDetailVO {
     private List<PlanSchoolVO> safetySchools;
 
     private PlanRiskSummary riskSummary;
+
+    /** 同校跨类别冲突警告 */
+    private List<String> conflictWarnings;
 }

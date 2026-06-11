@@ -6,9 +6,7 @@ import com.scu.gkvr_system_backend.vo.PlanSchoolVO;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 志愿方案计算工具类.
@@ -360,6 +358,80 @@ public final class PlanCalculationUtils {
         double score = (100 - avgProb) * 0.4 + avgRisk * 0.3 + reachRatio * 30 * 0.3;
         return BigDecimal.valueOf(Math.max(0, Math.min(100, score)))
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    // ══════════════════════════════════════════════
+    // 同校跨批次专业去重
+    // ══════════════════════════════════════════════
+
+    /**
+     * 对同一院校跨批次返回的专业分数做去重.
+     * 按 majorName 分组，保留 avgScore 最高的记录，避免同名专业重复计入风险.
+     */
+    public static List<Map<String, Object>> deduplicateMajorScores(List<Map<String, Object>> majorRows) {
+        if (majorRows == null || majorRows.isEmpty()) return majorRows;
+        LinkedHashMap<String, Map<String, Object>> seen = new LinkedHashMap<>();
+        for (Map<String, Object> row : majorRows) {
+            String name = toStr(row.get("majorName"));
+            if (!seen.containsKey(name)) {
+                seen.put(name, row);
+            } else {
+                int existingAvg = toInt(seen.get(name).get("avgScore"));
+                int newAvg = toInt(row.get("avgScore"));
+                if (newAvg > existingAvg) {
+                    seen.put(name, row);
+                }
+            }
+        }
+        return new ArrayList<>(seen.values());
+    }
+
+    // ══════════════════════════════════════════════
+    // 同校冲突合并解释
+    // ══════════════════════════════════════════════
+
+    /**
+     * 检测同校跨类别冲突并合并解释.
+     * 同一院校出现在多个类别时，合并为一条包含所有类别、专业和建议的警告.
+     */
+    public static List<String> buildMergedConflictWarnings(List<PlanSchoolVO> reach,
+                                                            List<PlanSchoolVO> match,
+                                                            List<PlanSchoolVO> safety) {
+        Map<Integer, List<PlanSchoolVO>> schoolMap = new LinkedHashMap<>();
+        for (PlanSchoolVO vo : reach) {
+            schoolMap.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add(vo);
+        }
+        for (PlanSchoolVO vo : match) {
+            schoolMap.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add(vo);
+        }
+        for (PlanSchoolVO vo : safety) {
+            schoolMap.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add(vo);
+        }
+
+        List<String> warnings = new ArrayList<>();
+        for (Map.Entry<Integer, List<PlanSchoolVO>> entry : schoolMap.entrySet()) {
+            List<PlanSchoolVO> vos = entry.getValue();
+            if (vos.size() <= 1) continue;
+
+            String schoolName = vos.get(0).getSchoolName();
+            List<String> categories = new ArrayList<>();
+            List<String> majorInfo = new ArrayList<>();
+            for (PlanSchoolVO vo : vos) {
+                categories.add(vo.getCategory());
+                if (vo.getSelectedMajors() != null && !vo.getSelectedMajors().isEmpty()) {
+                    majorInfo.add(vo.getCategory() + "档: " + String.join("、", vo.getSelectedMajors()));
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("「%s」同时出现在%s类别中。", schoolName, String.join("、", categories)));
+            if (!majorInfo.isEmpty()) {
+                sb.append("专业分布: ").append(String.join("; ", majorInfo)).append("。");
+            }
+            sb.append("建议仅保留一个类别，避免浪费志愿名额。");
+            warnings.add(sb.toString());
+        }
+        return warnings;
     }
 
     // ══════════════════════════════════════════════

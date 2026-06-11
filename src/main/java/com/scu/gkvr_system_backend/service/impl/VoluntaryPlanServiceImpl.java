@@ -101,8 +101,9 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         List<PlanSchoolVO> safetyVOs = buildSchoolVOs(safetyCandidates, "保",
                 userRank, score, batchName, request.getSafetyCount());
 
-        // ── 7. 同校冲突检测 ──
-        List<String> conflictWarnings = detectCrossCategoryConflicts(reachVOs, matchVOs, safetyVOs);
+        // ── 7. 同校冲突检测(合并解释) ──
+        List<String> conflictWarnings = PlanCalculationUtils.buildMergedConflictWarnings(
+                reachVOs, matchVOs, safetyVOs);
 
         // ── 8. 风险汇总 ──
         PlanRiskSummary summary = PlanCalculationUtils.buildRiskSummary(reachVOs, matchVOs, safetyVOs);
@@ -164,9 +165,9 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
             vo.setAdmissionProb(PlanCalculationUtils.calcAdmissionProb(avgRk, stdDev, userRank, category));
             vo.setAdmissionProbLevel(PlanCalculationUtils.probLevel(vo.getAdmissionProb()));
 
-            // 调剂风险
-            List<Map<String, Object>> majorRows = planSchoolMapper.selectMajorScoresForSchool(
-                    vo.getSchoolId(), batchName);
+            // 调剂风险 (跨批次去重)
+            List<Map<String, Object>> majorRows = PlanCalculationUtils.deduplicateMajorScores(
+                    planSchoolMapper.selectMajorScoresForSchool(vo.getSchoolId(), batchName));
             vo.setMajorAdjustRisk(PlanCalculationUtils.calcMajorAdjustRisk(majorRows, score));
             vo.setMajorAdjustRiskLevel(PlanCalculationUtils.riskLevel(vo.getMajorAdjustRisk()));
 
@@ -181,7 +182,7 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
                     r2020, r2021, r2022, userRank));
             vo.setRankTrend(PlanCalculationUtils.calcRankTrend(r2020, r2021, r2022));
 
-            // 专业维度风险
+            // 专业维度风险 (已去重)
             vo.setMajorDetails(buildMajorRiskDetails(majorRows, score));
 
             vos.add(vo);
@@ -208,33 +209,6 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
             riskVOs.add(mvo);
         }
         return riskVOs;
-    }
-
-    /**
-     * 同校跨类别冲突检测
-     */
-    private List<String> detectCrossCategoryConflicts(List<PlanSchoolVO> reach,
-                                                       List<PlanSchoolVO> match,
-                                                       List<PlanSchoolVO> safety) {
-        List<String> warnings = new ArrayList<>();
-        Map<Integer, List<String>> schoolCategories = new HashMap<>();
-        for (PlanSchoolVO vo : reach) {
-            schoolCategories.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add("冲");
-        }
-        for (PlanSchoolVO vo : match) {
-            schoolCategories.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add("稳");
-        }
-        for (PlanSchoolVO vo : safety) {
-            schoolCategories.computeIfAbsent(vo.getSchoolId(), k -> new ArrayList<>()).add("保");
-        }
-
-        for (Map.Entry<Integer, List<String>> entry : schoolCategories.entrySet()) {
-            if (entry.getValue().size() > 1) {
-                warnings.add(String.format("院校ID %d 同时出现在 %s 类别中，建议去重。",
-                        entry.getKey(), String.join("、", entry.getValue())));
-            }
-        }
-        return warnings;
     }
 
     // ══════════════════════════════════════════
@@ -295,9 +269,9 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
                 ps.setRankTrend("stable");
             }
 
-            // 调剂风险
-            List<Map<String, Object>> majorRows = planSchoolMapper.selectMajorScoresForSchool(
-                    dto.getSchoolId(), request.getBatchName());
+            // 调剂风险 (跨批次去重)
+            List<Map<String, Object>> majorRows = PlanCalculationUtils.deduplicateMajorScores(
+                    planSchoolMapper.selectMajorScoresForSchool(dto.getSchoolId(), request.getBatchName()));
             ps.setMajorAdjustRisk(PlanCalculationUtils.calcMajorAdjustRisk(majorRows, request.getScore()));
 
             // 热度
@@ -377,6 +351,7 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         vo.setMatchSchools(matchList);
         vo.setSafetySchools(safetyList);
         vo.setRiskSummary(PlanCalculationUtils.buildRiskSummary(reachList, matchList, safetyList));
+        vo.setConflictWarnings(PlanCalculationUtils.buildMergedConflictWarnings(reachList, matchList, safetyList));
 
         return vo;
     }
@@ -403,9 +378,9 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
             vo.setSelectedMajors(Arrays.asList(ps.getSelectedMajors().split(",")));
         }
 
-        // 专业详情
-        List<Map<String, Object>> majorRows = planSchoolMapper.selectMajorScoresForSchool(
-                ps.getSchoolId(), null);
+        // 专业详情 (跨批次去重)
+        List<Map<String, Object>> majorRows = PlanCalculationUtils.deduplicateMajorScores(
+                planSchoolMapper.selectMajorScoresForSchool(ps.getSchoolId(), null));
         vo.setMajorDetails(buildMajorRiskDetails(majorRows, 0));
         return vo;
     }
@@ -444,11 +419,16 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         copy.setVersion(1);
         copy.setParentId(original.getId());
         copy.setStatus(0);
-        copy.setTotalRiskScore(original.getTotalRiskScore());
+        // 不复制旧风险评分, 后面独立重算
         this.baseMapper.insert(copy);
 
-        // 复制所有院校
+        // 复制院校结构并独立重算风险指标
         List<PlanSchool> origSchools = planSchoolMapper.selectByPlanIdOrdered(planId);
+        List<PlanSchool> clonedSchools = new ArrayList<>();
+        List<BigDecimal> admissionProbs = new ArrayList<>();
+        List<BigDecimal> majorAdjustRisks = new ArrayList<>();
+        long reachCount = 0;
+
         for (PlanSchool orig : origSchools) {
             PlanSchool cloned = new PlanSchool();
             cloned.setPlanId(copy.getId());
@@ -456,20 +436,25 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
             cloned.setSchoolName(orig.getSchoolName());
             cloned.setCategory(orig.getCategory());
             cloned.setSortOrder(orig.getSortOrder());
-            cloned.setAdmissionProb(orig.getAdmissionProb());
-            cloned.setMajorAdjustRisk(orig.getMajorAdjustRisk());
-            cloned.setPopularityScore(orig.getPopularityScore());
-            cloned.setPopularityTrend(orig.getPopularityTrend());
-            cloned.setRankFluctuation(orig.getRankFluctuation());
-            cloned.setAvgRank3yr(orig.getAvgRank3yr());
-            cloned.setRankStdDev(orig.getRankStdDev());
-            cloned.setRankTrend(orig.getRankTrend());
             cloned.setSelectedMajors(orig.getSelectedMajors());
+
+            // 独立重算: 从数据源读取并计算, 不复用原方案的风险摘要
+            recalcSchoolMetrics(cloned, copy.getUserRank(), copy.getScore(), copy.getBatchName());
+
             planSchoolMapper.insert(cloned);
+            clonedSchools.add(cloned);
+            admissionProbs.add(cloned.getAdmissionProb());
+            majorAdjustRisks.add(cloned.getMajorAdjustRisk());
+            if ("冲".equals(cloned.getCategory())) reachCount++;
         }
 
-        // 复制版本快照
-        saveVersionSnapshot(copy.getId(), 1, planSchoolMapper.selectByPlanIdOrdered(copy.getId()));
+        // 独立计算综合风险评分
+        copy.setTotalRiskScore(PlanCalculationUtils.calcTotalRiskScore(
+                admissionProbs, majorAdjustRisks, reachCount, clonedSchools.size()));
+        this.baseMapper.updateById(copy);
+
+        // 创建独立版本快照
+        saveVersionSnapshot(copy.getId(), 1, clonedSchools);
 
         return copy.getId();
     }
@@ -486,9 +471,22 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
             return false;
         }
 
+        // 快照当前排序状态, 保证人工调序只影响当前方案版本
+        List<PlanSchool> currentSchools = planSchoolMapper.selectByPlanIdOrdered(request.getPlanId());
+        saveVersionSnapshot(request.getPlanId(), plan.getVersion(), currentSchools);
+
+        int newVersion = plan.getVersion() + 1;
+        plan.setVersion(newVersion);
+        this.baseMapper.updateById(plan);
+
         for (SchoolReorderDTO.SchoolOrderItem item : request.getOrderedSchools()) {
             planSchoolMapper.updateSortOrder(item.getPlanSchoolId(), item.getSortOrder());
         }
+
+        // 保存调序后的新版本快照
+        List<PlanSchool> updatedSchools = planSchoolMapper.selectByPlanIdOrdered(request.getPlanId());
+        saveVersionSnapshot(request.getPlanId(), newVersion, updatedSchools);
+
         return true;
     }
 
@@ -516,37 +514,13 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         List<BigDecimal> majorAdjustRisks = new ArrayList<>();
         long reachCount = 0;
 
-        // 重算每所院校的指标
+        // 清理旧风险缓存并重算每所院校的指标
         for (PlanSchool ps : currentSchools) {
-            LambdaQueryWrapper<ScLiScore> scWrapper = new LambdaQueryWrapper<>();
-            scWrapper.eq(ScLiScore::getSchoolId, ps.getSchoolId());
-            ScLiScore sc = scLiScoreMapper.selectOne(scWrapper);
+            // 先清除所有旧风险字段, 避免残留陈旧数据
+            resetSchoolRiskFields(ps);
 
-            if (sc != null) {
-                int r0 = sc.getRank2020(), r1 = sc.getRank2021(), r2 = sc.getRank2022();
-                double avg = PlanCalculationUtils.avgRank(r0, r1, r2);
-                double std = PlanCalculationUtils.calcRankStdDev(r0, r1, r2);
-                ps.setAvgRank3yr(BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP));
-                ps.setRankStdDev(BigDecimal.valueOf(std).setScale(2, RoundingMode.HALF_UP));
-                ps.setAdmissionProb(PlanCalculationUtils.calcAdmissionProb(
-                        avg, std, plan.getUserRank(), ps.getCategory()));
-                ps.setRankFluctuation(PlanCalculationUtils.buildRankFluctuationExplanation(
-                        r0, r1, r2, plan.getUserRank()));
-                ps.setRankTrend(PlanCalculationUtils.calcRankTrend(r0, r1, r2));
-            }
-
-            List<Map<String, Object>> majorRows = planSchoolMapper.selectMajorScoresForSchool(
-                    ps.getSchoolId(), plan.getBatchName());
-            ps.setMajorAdjustRisk(PlanCalculationUtils.calcMajorAdjustRisk(majorRows, plan.getScore()));
-
-            // 刷新热度
-            SchoolInfo si = schoolInfoMapper.selectById(ps.getSchoolId());
-            if (si != null) {
-                int mv = (si.getMonthView() != null) ? si.getMonthView() : 0;
-                int tv = PlanCalculationUtils.toInt(si.getTotalView());
-                ps.setPopularityScore(PlanCalculationUtils.calcPopularityScore(mv, tv));
-                ps.setPopularityTrend(PlanCalculationUtils.calcPopularityTrend(mv, tv));
-            }
+            // 从数据源重新计算
+            recalcSchoolMetrics(ps, plan.getUserRank(), plan.getScore(), plan.getBatchName());
 
             planSchoolMapper.updateById(ps);
             admissionProbs.add(ps.getAdmissionProb());
@@ -697,6 +671,69 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         }
         plan.setStatus(status);
         return this.baseMapper.updateById(plan) > 0;
+    }
+
+    // ══════════════════════════════════════════
+    // 院校风险指标重算 & 重置
+    // ══════════════════════════════════════════
+
+    /**
+     * 清除院校的所有风险字段, 用于重新评估前避免残留陈旧数据.
+     */
+    private void resetSchoolRiskFields(PlanSchool ps) {
+        ps.setAdmissionProb(BigDecimal.valueOf(50));
+        ps.setMajorAdjustRisk(BigDecimal.valueOf(50));
+        ps.setPopularityScore(BigDecimal.ZERO);
+        ps.setPopularityTrend("stable");
+        ps.setRankFluctuation("暂无历年数据");
+        ps.setAvgRank3yr(null);
+        ps.setRankStdDev(null);
+        ps.setRankTrend("stable");
+    }
+
+    /**
+     * 从数据源独立重算院校的所有风险指标.
+     * 用于方案复制和重新评估, 不复用任何旧方案的缓存值.
+     */
+    private void recalcSchoolMetrics(PlanSchool ps, int userRank, int userScore, String batchName) {
+        // 位次相关指标
+        LambdaQueryWrapper<ScLiScore> scWrapper = new LambdaQueryWrapper<>();
+        scWrapper.eq(ScLiScore::getSchoolId, ps.getSchoolId());
+        ScLiScore sc = scLiScoreMapper.selectOne(scWrapper);
+
+        if (sc != null) {
+            int r0 = sc.getRank2020(), r1 = sc.getRank2021(), r2 = sc.getRank2022();
+            double avg = PlanCalculationUtils.avgRank(r0, r1, r2);
+            double std = PlanCalculationUtils.calcRankStdDev(r0, r1, r2);
+            ps.setAvgRank3yr(BigDecimal.valueOf(avg).setScale(2, RoundingMode.HALF_UP));
+            ps.setRankStdDev(BigDecimal.valueOf(std).setScale(2, RoundingMode.HALF_UP));
+            ps.setAdmissionProb(PlanCalculationUtils.calcAdmissionProb(
+                    avg, std, userRank, ps.getCategory()));
+            ps.setRankFluctuation(PlanCalculationUtils.buildRankFluctuationExplanation(
+                    r0, r1, r2, userRank));
+            ps.setRankTrend(PlanCalculationUtils.calcRankTrend(r0, r1, r2));
+        } else {
+            ps.setAdmissionProb(BigDecimal.valueOf(50));
+            ps.setRankFluctuation("暂无历年数据");
+            ps.setRankTrend("stable");
+        }
+
+        // 调剂风险 (跨批次去重)
+        List<Map<String, Object>> majorRows = PlanCalculationUtils.deduplicateMajorScores(
+                planSchoolMapper.selectMajorScoresForSchool(ps.getSchoolId(), batchName));
+        ps.setMajorAdjustRisk(PlanCalculationUtils.calcMajorAdjustRisk(majorRows, userScore));
+
+        // 热度
+        SchoolInfo si = schoolInfoMapper.selectById(ps.getSchoolId());
+        if (si != null) {
+            int mv = (si.getMonthView() != null) ? si.getMonthView() : 0;
+            int tv = PlanCalculationUtils.toInt(si.getTotalView());
+            ps.setPopularityScore(PlanCalculationUtils.calcPopularityScore(mv, tv));
+            ps.setPopularityTrend(PlanCalculationUtils.calcPopularityTrend(mv, tv));
+        } else {
+            ps.setPopularityScore(BigDecimal.ZERO);
+            ps.setPopularityTrend("stable");
+        }
     }
 
     // ══════════════════════════════════════════
