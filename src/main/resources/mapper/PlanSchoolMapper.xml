@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.scu.gkvr_system_backend.mapper.PlanSchoolMapper">
+
+    <select id="selectCandidateSchools" resultType="java.util.Map">
+        SELECT
+            s.school_id       AS schoolId,
+            s.school_name     AS schoolName,
+            s.score2020       AS score2020,
+            s.rank2020        AS rank2020,
+            s.score2021       AS score2021,
+            s.rank2021        AS rank2021,
+            s.score2022       AS score2022,
+            s.rank2022        AS rank2022,
+            si.province_name  AS provinceName,
+            si.is985          AS is985,
+            si.is211          AS is211,
+            si.doublehigh     AS doublehigh,
+            si.month_view     AS monthView,
+            si.total_view     AS totalView
+        FROM sc_li_score s
+        LEFT JOIN school_info si ON s.school_id = si.school_id
+        WHERE #{upperRank} &lt;= ((s.rank2020 + s.rank2021 + s.rank2022) / 3)
+          AND ((s.rank2020 + s.rank2021 + s.rank2022) / 3) &lt;= #{lowerRank}
+        <if test="provinces != null and provinces.size() > 0">
+            AND si.province_name IN
+            <foreach collection="provinces" item="p" open="(" separator="," close=")">
+                #{p}
+            </foreach>
+        </if>
+        <if test="require985 == true">
+            AND si.is985 = '985'
+        </if>
+        <if test="require211 == true">
+            AND si.is211 = '211'
+        </if>
+        <if test="requireDoubleHigh == true">
+            AND si.doublehigh = '双一流'
+        </if>
+        ORDER BY ((s.rank2020 + s.rank2021 + s.rank2022) / 3) DESC
+    </select>
+
+    <select id="selectMajorScoresForSchool" resultType="java.util.Map">
+        SELECT
+            ms.major_name AS majorName,
+            ms.max        AS maxScore,
+            ms.min        AS minScore,
+            ms.average    AS avgScore,
+            ms.batch      AS batch
+        FROM major_score ms
+        WHERE ms.school_id = #{schoolId}
+        <if test="batchName != null and batchName != ''">
+            AND ms.batch = #{batchName}
+        </if>
+        ORDER BY ms.average DESC
+    </select>
+
+</mapper>
