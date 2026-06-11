@@ -291,6 +291,8 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
                 ps.setRankTrend(PlanCalculationUtils.calcRankTrend(r0, r1, r2));
             } else {
                 ps.setAdmissionProb(BigDecimal.valueOf(50));
+                ps.setAvgRank3yr(BigDecimal.ZERO);
+                ps.setRankStdDev(BigDecimal.ZERO);
                 ps.setRankFluctuation("暂无历年数据");
                 ps.setRankTrend("stable");
             }
@@ -388,10 +390,15 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         vo.setSchoolName(ps.getSchoolName());
         vo.setCategory(ps.getCategory());
         vo.setSortOrder(ps.getSortOrder());
-        vo.setAdmissionProb(ps.getAdmissionProb());
-        vo.setAdmissionProbLevel(PlanCalculationUtils.probLevel(ps.getAdmissionProb()));
-        vo.setMajorAdjustRisk(ps.getMajorAdjustRisk());
-        vo.setMajorAdjustRiskLevel(PlanCalculationUtils.riskLevel(ps.getMajorAdjustRisk()));
+
+        // 空安全: 防止 NPE(数据库中存在未初始化记录的场景)
+        BigDecimal prob = ps.getAdmissionProb() != null ? ps.getAdmissionProb() : BigDecimal.valueOf(50);
+        BigDecimal risk = ps.getMajorAdjustRisk() != null ? ps.getMajorAdjustRisk() : BigDecimal.valueOf(50);
+
+        vo.setAdmissionProb(prob);
+        vo.setAdmissionProbLevel(PlanCalculationUtils.probLevel(prob));
+        vo.setMajorAdjustRisk(risk);
+        vo.setMajorAdjustRiskLevel(PlanCalculationUtils.riskLevel(risk));
         vo.setPopularityScore(ps.getPopularityScore());
         vo.setPopularityTrend(ps.getPopularityTrend());
         vo.setRankFluctuation(ps.getRankFluctuation());
@@ -516,7 +523,7 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
         List<BigDecimal> majorAdjustRisks = new ArrayList<>();
         long reachCount = 0;
 
-        // 重算每所院校的指标
+        // 重算每所院校的指标 ── 全部字段覆盖, 不留旧缓存
         for (PlanSchool ps : currentSchools) {
             LambdaQueryWrapper<ScLiScore> scWrapper = new LambdaQueryWrapper<>();
             scWrapper.eq(ScLiScore::getSchoolId, ps.getSchoolId());
@@ -533,6 +540,13 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
                 ps.setRankFluctuation(PlanCalculationUtils.buildRankFluctuationExplanation(
                         r0, r1, r2, plan.getUserRank()));
                 ps.setRankTrend(PlanCalculationUtils.calcRankTrend(r0, r1, r2));
+            } else {
+                // 清除旧缓存, 避免复用上一版本的风险摘要
+                ps.setAvgRank3yr(BigDecimal.ZERO);
+                ps.setRankStdDev(BigDecimal.ZERO);
+                ps.setAdmissionProb(BigDecimal.valueOf(50));
+                ps.setRankFluctuation("暂无历年数据(已重新评估)");
+                ps.setRankTrend("stable");
             }
 
             List<Map<String, Object>> majorRows = planSchoolMapper.selectMajorScoresForSchool(
