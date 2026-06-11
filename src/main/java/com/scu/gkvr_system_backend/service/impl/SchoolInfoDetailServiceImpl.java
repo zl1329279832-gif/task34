@@ -27,8 +27,6 @@ import java.util.Map;
 public class SchoolInfoDetailServiceImpl extends ServiceImpl<SchoolInfoDetailMapper, SchoolInfoDetail>
         implements SchoolInfoDetailService {
 
-    private final Map<String, Object> result = new HashMap<>(); //结果集
-
     @Autowired
     private ScLiScoreMapper scLiScoreMapper;
 
@@ -40,6 +38,7 @@ public class SchoolInfoDetailServiceImpl extends ServiceImpl<SchoolInfoDetailMap
 
     @Override
     public Map<String, Object> getSchoolDetail(int schoolId) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfoDetail> wrapper1 = new LambdaQueryWrapper<>();
         wrapper1.eq(SchoolInfoDetail::getSchoolId, schoolId);
         SchoolInfoDetail schoolInfoDetail = this.baseMapper.selectOne(wrapper1);

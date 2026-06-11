@@ -24,13 +24,12 @@ import java.util.Map;
 public class ScoreRankServiceImpl extends ServiceImpl<ScoreRankMapper, ScoreRank>
         implements ScoreRankService {
 
-    private final Map<String, Object> result = new HashMap<>(); //结果集
-
     @Autowired
     ScLiScoreMapper scLiScoreMapper;
 
     @Override
     public Map<String, Object> getRank(int score) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<ScoreRank> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ScoreRank::getScore, score);
         ScoreRank scoreRank = this.baseMapper.selectOne(wrapper);
@@ -40,6 +39,7 @@ public class ScoreRankServiceImpl extends ServiceImpl<ScoreRankMapper, ScoreRank
 
     @Override
     public Map<String, Object> getReco(int page, int score, String risk) {
+        Map<String, Object> result = new HashMap<>();
 
         // 设置分数范围
         int minScore = 100;  // 分数下限

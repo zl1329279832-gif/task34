@@ -20,10 +20,9 @@ import java.util.Map;
 public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolInfo>
         implements SchoolInfoService {
 
-    private final Map<String, Object> result = new HashMap<>();  // 结果集
-
     @Override
     public Map<String, Object> getAllSchools(int page) {
+        Map<String, Object> result = new HashMap<>();
         Page<SchoolInfo> schoolInfoPage = this.baseMapper.selectPage(new Page<>(page, 10), null);
         result.put("schools", schoolInfoPage.getRecords());
         result.put("total", schoolInfoPage.getTotal());
@@ -32,6 +31,7 @@ public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolI
 
     @Override
     public Map<String, Object> get985Schools(int page) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SchoolInfo::getIs985, "985");
         Page<SchoolInfo> schoolInfoPage = this.baseMapper.selectPage(new Page<>(page, 10), wrapper);
@@ -42,6 +42,7 @@ public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolI
 
     @Override
     public Map<String, Object> get211Schools(int page) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SchoolInfo::getIs211, "211");
         Page<SchoolInfo> schoolInfoPage = this.baseMapper.selectPage(new Page<>(page, 10), wrapper);
@@ -52,6 +53,7 @@ public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolI
 
     @Override
     public Map<String, Object> getDoublehighSchools(int page) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SchoolInfo::getDoublehigh, "双一流");
         Page<SchoolInfo> schoolInfoPage = this.baseMapper.selectPage(new Page<>(page, 10), wrapper);
@@ -62,6 +64,7 @@ public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolI
 
     @Override
     public Map<String, Object> getByProvince(int page, String provinceName) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfo> wrapper = new LambdaQueryWrapper<>();
         if (provinceName.equals("全部")) {
             return getAllSchools(page);
@@ -75,6 +78,7 @@ public class SchoolInfoServiceImpl extends ServiceImpl<SchoolInfoMapper, SchoolI
 
     @Override
     public Map<String, Object> SearchByName(int page, String schoolName) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<SchoolInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.like(SchoolInfo::getSchoolName, schoolName);
         Page<SchoolInfo> schoolInfoPage = this.baseMapper.selectPage(new Page<>(page, 10), wrapper);

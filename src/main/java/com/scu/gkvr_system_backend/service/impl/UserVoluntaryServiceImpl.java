@@ -19,10 +19,9 @@ import java.util.Map;
 @Service
 public class UserVoluntaryServiceImpl extends ServiceImpl<UserVoluntaryMapper, UserVoluntary>
         implements UserVoluntaryService {
-    private final Map<String, Object> result = new HashMap<>(); //结果集
-
     @Override
     public Map<String, Object> getVoluntary(String username) {
+        Map<String, Object> result = new HashMap<>();
         LambdaQueryWrapper<UserVoluntary> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserVoluntary::getUserName, username);
         List<UserVoluntary> userVoluntaryList = this.baseMapper.selectList(wrapper);
