@@ -155,3 +155,74 @@ CREATE TABLE IF NOT EXISTS plan_version_log (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_version_log_plan FOREIGN KEY (plan_id) REFERENCES voluntary_plan(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS simulation_batch (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    user_name        VARCHAR(50)  NOT NULL,
+    source_plan_id   INT          NOT NULL,
+    batch_name       VARCHAR(100) NOT NULL,
+    sequence_number  INT          NOT NULL DEFAULT 1,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    total_tasks      INT          NOT NULL DEFAULT 0,
+    completed_tasks  INT          NOT NULL DEFAULT 0,
+    failed_tasks     INT          NOT NULL DEFAULT 0,
+    create_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sim_batch_plan FOREIGN KEY (source_plan_id) REFERENCES voluntary_plan(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS simulation_task (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    batch_id         INT          NOT NULL,
+    task_label       VARCHAR(100),
+    status           VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    sequence_number  INT          NOT NULL DEFAULT 0,
+    param_score      INT,
+    param_user_rank  INT,
+    param_batch_name VARCHAR(50),
+    param_region_pref VARCHAR(500),
+    param_school_tier VARCHAR(100),
+    param_major_pref  VARCHAR(500),
+    risk_snapshot    TEXT,
+    result_data      TEXT,
+    total_risk_score DECIMAL(5,2),
+    reach_count      INT,
+    match_count      INT,
+    safety_count     INT,
+    error_message    VARCHAR(500),
+    compute_start    DATETIME,
+    compute_end      DATETIME,
+    create_time      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sim_task_batch FOREIGN KEY (batch_id) REFERENCES simulation_batch(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS simulation_task_school (
+    id                    INT AUTO_INCREMENT PRIMARY KEY,
+    task_id               INT          NOT NULL,
+    school_id             INT          NOT NULL,
+    school_name           VARCHAR(100) NOT NULL,
+    category              VARCHAR(10)  NOT NULL,
+    sort_order            INT          NOT NULL DEFAULT 0,
+    admission_prob        DECIMAL(5,2) NOT NULL,
+    admission_prob_level  VARCHAR(10)  NOT NULL,
+    major_adjust_risk     DECIMAL(5,2) NOT NULL,
+    major_adjust_risk_level VARCHAR(10) NOT NULL,
+    popularity_score      DECIMAL(5,2),
+    popularity_trend      VARCHAR(10),
+    rank_fluctuation      VARCHAR(500),
+    avg_rank_3yr          DECIMAL(10,2),
+    rank_std_dev          DECIMAL(10,2),
+    rank_trend            VARCHAR(10),
+    selected_majors       VARCHAR(500),
+    prob_rank_ratio       DECIMAL(8,4),
+    prob_stability_factor DECIMAL(5,4),
+    prob_category_adj     VARCHAR(100),
+    prob_base_value       DECIMAL(5,2),
+    prob_explanation       VARCHAR(1000),
+    source_admission_prob DECIMAL(5,2),
+    source_category       VARCHAR(10),
+    prob_delta            DECIMAL(5,2),
+    category_changed      TINYINT      NOT NULL DEFAULT 0,
+    create_time           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sts_task FOREIGN KEY (task_id) REFERENCES simulation_task(id) ON DELETE CASCADE
+);

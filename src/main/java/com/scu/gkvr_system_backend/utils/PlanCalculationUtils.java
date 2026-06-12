@@ -3,6 +3,7 @@ package com.scu.gkvr_system_backend.utils;
 import com.scu.gkvr_system_backend.vo.MajorRiskVO;
 import com.scu.gkvr_system_backend.vo.PlanRiskSummary;
 import com.scu.gkvr_system_backend.vo.PlanSchoolVO;
+import com.scu.gkvr_system_backend.vo.ProbabilityExplanationVO;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -378,5 +379,96 @@ public final class PlanCalculationUtils {
 
     public static String toStr(Object obj) {
         return (obj != null) ? obj.toString() : "";
+    }
+
+    // ══════════════════════════════════════════════
+    // 概率解释构建
+    // ══════════════════════════════════════════════
+
+    /**
+     * 构建录取概率的逐步解释.
+     * 逻辑与 calcAdmissionProb 完全一致,但捕获每个中间值用于可解释性展示.
+     */
+    public static ProbabilityExplanationVO buildProbabilityExplanation(
+            double avgRank, double stdDev, int userRank, String category,
+            int r2020, int r2021, int r2022) {
+
+        ProbabilityExplanationVO vo = new ProbabilityExplanationVO();
+        vo.setRank2020(r2020);
+        vo.setRank2021(r2021);
+        vo.setRank2022(r2022);
+        vo.setAvgRank3yr(BigDecimal.valueOf(avgRank).setScale(2, RoundingMode.HALF_UP));
+        vo.setRankStdDev(BigDecimal.valueOf(stdDev).setScale(2, RoundingMode.HALF_UP));
+
+        // Step 1: rank ratio
+        double rankRatio = (userRank > 0) ? avgRank / userRank : 1.0;
+        vo.setRankRatio(BigDecimal.valueOf(rankRatio).setScale(4, RoundingMode.HALF_UP));
+
+        // Step 2: base probability
+        double baseProbability = rankRatio * 50;
+        vo.setBaseProbability(BigDecimal.valueOf(baseProbability).setScale(2, RoundingMode.HALF_UP));
+
+        // Step 3: coefficient of variation
+        double cv = (avgRank > 0) ? stdDev / avgRank : 0;
+        vo.setCoefficientOfVariation(BigDecimal.valueOf(cv).setScale(4, RoundingMode.HALF_UP));
+
+        // Step 4: stability factor
+        double stabilityFactor = Math.max(0.5, 1.0 - cv * 0.5);
+        vo.setStabilityFactor(BigDecimal.valueOf(stabilityFactor).setScale(4, RoundingMode.HALF_UP));
+
+        // Step 5: adjusted probability
+        double adjustedProbability = baseProbability * stabilityFactor;
+        vo.setAdjustedProbability(BigDecimal.valueOf(adjustedProbability).setScale(2, RoundingMode.HALF_UP));
+
+        // Step 6: category adjustment
+        double finalProb = adjustedProbability;
+        String categoryAdj;
+        if ("冲".equals(category)) {
+            finalProb = Math.min(finalProb, 50);
+            categoryAdj = "冲一冲: 概率上限50%";
+        } else if ("保".equals(category)) {
+            finalProb = Math.max(finalProb, 55);
+            categoryAdj = "保一保: 概率下限55%";
+        } else {
+            categoryAdj = "稳一稳: 无额外调整";
+        }
+        vo.setCategoryAdjustment(categoryAdj);
+
+        // Step 7: clamp to [1, 99]
+        finalProb = Math.max(1, Math.min(99, finalProb));
+        vo.setFinalProbability(BigDecimal.valueOf(finalProb).setScale(2, RoundingMode.HALF_UP));
+
+        // Build explanation text
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("该校近三年录取位次: %d(2020)、%d(2021)、%d(2022)，", r2020, r2021, r2022));
+        sb.append(String.format("平均位次%.0f，标准差%.0f。", avgRank, stdDev));
+        sb.append(String.format("您的位次%d，位次比=%.4f，基础概率=%.2f%%。", userRank, rankRatio, baseProbability));
+        sb.append(String.format("稳定性因子=%.4f(波动%s)，调整后概率=%.2f%%。",
+                stabilityFactor, cv <= 0.05 ? "很小" : cv <= 0.15 ? "适中" : "较大", adjustedProbability));
+        sb.append(String.format("%s，最终录取概率=%.2f%%。", categoryAdj, finalProb));
+        vo.setExplanation(sb.toString());
+
+        return vo;
+    }
+
+    /**
+     * 当历史数据缺失时构建默认概率解释.
+     */
+    public static ProbabilityExplanationVO buildMissingDataExplanation(String schoolName, String reason) {
+        ProbabilityExplanationVO vo = new ProbabilityExplanationVO();
+        vo.setRankRatio(BigDecimal.ONE);
+        vo.setBaseProbability(BigDecimal.valueOf(50));
+        vo.setCoefficientOfVariation(BigDecimal.ZERO);
+        vo.setStabilityFactor(BigDecimal.ONE);
+        vo.setAdjustedProbability(BigDecimal.valueOf(50));
+        vo.setCategoryAdjustment("无历史数据,使用默认值");
+        vo.setFinalProbability(BigDecimal.valueOf(50));
+        vo.setRank2020(0);
+        vo.setRank2021(0);
+        vo.setRank2022(0);
+        vo.setAvgRank3yr(BigDecimal.ZERO);
+        vo.setRankStdDev(BigDecimal.ZERO);
+        vo.setExplanation(String.format("%s: %s。使用默认录取概率50%%。", schoolName, reason));
+        return vo;
     }
 }
