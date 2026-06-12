@@ -1,5 +1,17 @@
 -- H2兼容MySQL语法的测试建表脚本
 
+-- H2兼容MySQL FIELD()函数
+CREATE ALIAS IF NOT EXISTS FIELD AS '
+int field(String... args) {
+    if (args == null || args.length < 2) return 0;
+    String val = args[0];
+    for (int i = 1; i < args.length; i++) {
+        if (val != null && val.equals(args[i])) return i;
+    }
+    return 0;
+}
+';
+
 CREATE TABLE IF NOT EXISTS score_rank (
     id INT AUTO_INCREMENT PRIMARY KEY,
     score VARCHAR(10),
@@ -139,7 +151,7 @@ CREATE TABLE IF NOT EXISTS plan_school (
     popularity_score DECIMAL(5,2),
     popularity_trend VARCHAR(10),
     rank_fluctuation VARCHAR(500),
-    avg_rank_3yr DECIMAL(10,2),
+    avg_rank3yr DECIMAL(10,2),
     rank_std_dev DECIMAL(10,2),
     rank_trend VARCHAR(10),
     selected_majors VARCHAR(500),
@@ -155,3 +167,40 @@ CREATE TABLE IF NOT EXISTS plan_version_log (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_version_log_plan FOREIGN KEY (plan_id) REFERENCES voluntary_plan(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS simulation_batch_task (
+    id                    INT AUTO_INCREMENT PRIMARY KEY,
+    user_name             VARCHAR(50)  NOT NULL,
+    base_plan_id          INT          NOT NULL,
+    base_plan_version     INT          NOT NULL,
+    status                VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    total_variants        INT          NOT NULL DEFAULT 0,
+    completed_variants    INT          NOT NULL DEFAULT 0,
+    progress_percent      DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+    error_message         VARCHAR(1000),
+    create_time           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS simulation_variant (
+    id                      INT AUTO_INCREMENT PRIMARY KEY,
+    batch_task_id           INT          NOT NULL,
+    variant_name            VARCHAR(100) NOT NULL,
+    variant_index           INT          NOT NULL,
+    score_override          INT,
+    rank_override           INT,
+    batch_name_override     VARCHAR(50),
+    region_pref_override    VARCHAR(500),
+    school_tier_override    VARCHAR(100),
+    major_pref_override     VARCHAR(500),
+    status                  VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    simulated_plan_id       INT,
+    error_message           VARCHAR(1000),
+    computation_time_ms     BIGINT,
+    create_time             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sim_variant_batch FOREIGN KEY (batch_task_id)
+        REFERENCES simulation_batch_task(id) ON DELETE CASCADE
+);
+
+ALTER TABLE voluntary_plan ADD COLUMN simulation_batch_task_id INT DEFAULT NULL;

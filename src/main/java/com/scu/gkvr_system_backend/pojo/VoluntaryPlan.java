@@ -47,6 +47,9 @@ public class VoluntaryPlan implements Serializable {
 
     private BigDecimal totalRiskScore;
 
+    /** 关联的模拟批次任务ID(NULL=正式方案, 非NULL=模拟方案) */
+    private Integer simulationBatchTaskId;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

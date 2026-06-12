@@ -54,3 +54,53 @@ CREATE TABLE IF NOT EXISTS plan_version_log (
     INDEX idx_plan_version (plan_id, version),
     CONSTRAINT fk_version_log_plan FOREIGN KEY (plan_id) REFERENCES voluntary_plan(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='方案版本快照日志';
+
+-- 模拟批次任务表
+CREATE TABLE IF NOT EXISTS simulation_batch_task (
+    id                    INT AUTO_INCREMENT PRIMARY KEY COMMENT '批次任务ID',
+    user_name             VARCHAR(50)  NOT NULL COMMENT '用户名',
+    base_plan_id          INT          NOT NULL COMMENT '基础方案ID',
+    base_plan_version     INT          NOT NULL COMMENT '提交时的基础方案版本号',
+    status                VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                          COMMENT 'pending/running/completed/failed/stale',
+    total_variants        INT          NOT NULL DEFAULT 0 COMMENT '总变体数',
+    completed_variants    INT          NOT NULL DEFAULT 0 COMMENT '已完成变体数',
+    progress_percent      DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '进度百分比(0-100)',
+    error_message         VARCHAR(1000)         COMMENT '批次级错误信息',
+    create_time           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_name (user_name),
+    INDEX idx_base_plan_id (base_plan_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟批次任务表';
+
+-- 模拟变体表
+CREATE TABLE IF NOT EXISTS simulation_variant (
+    id                      INT AUTO_INCREMENT PRIMARY KEY COMMENT '变体ID',
+    batch_task_id           INT          NOT NULL COMMENT '所属批次任务ID',
+    variant_name            VARCHAR(100) NOT NULL COMMENT '变体名称',
+    variant_index           INT          NOT NULL COMMENT '变体序号(从0开始)',
+    score_override          INT                   COMMENT '分数覆盖值',
+    rank_override           INT                   COMMENT '位次覆盖值',
+    batch_name_override     VARCHAR(50)           COMMENT '批次覆盖值',
+    region_pref_override    VARCHAR(500)          COMMENT '地区偏好覆盖值',
+    school_tier_override    VARCHAR(100)          COMMENT '院校层次覆盖值',
+    major_pref_override     VARCHAR(500)          COMMENT '专业偏好覆盖值',
+    status                  VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                            COMMENT 'pending/running/completed/failed',
+    simulated_plan_id       INT                   COMMENT '生成的模拟方案ID',
+    error_message           VARCHAR(1000)         COMMENT '变体级错误信息',
+    computation_time_ms     BIGINT                COMMENT '计算耗时(毫秒)',
+    create_time             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time             DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_batch_task_id (batch_task_id),
+    INDEX idx_status (status),
+    CONSTRAINT fk_sim_variant_batch FOREIGN KEY (batch_task_id)
+        REFERENCES simulation_batch_task(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模拟变体表';
+
+-- voluntary_plan 扩展: 关联模拟批次
+ALTER TABLE voluntary_plan
+    ADD COLUMN simulation_batch_task_id INT DEFAULT NULL
+        COMMENT '关联的模拟批次任务ID(NULL=正式方案, 非NULL=模拟方案)',
+    ADD INDEX idx_simulation_batch (simulation_batch_task_id);

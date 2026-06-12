@@ -150,7 +150,7 @@ class VoluntaryPlanUserIsolationTest {
         // 验证listUserPlans只传userName, 由SQL过滤
         VoluntaryPlan userAPlan = new VoluntaryPlan();
         userAPlan.setUserName("userA");
-        when(voluntaryPlanMapper.selectByUserName("userA"))
+        when(voluntaryPlanMapper.selectRealPlansByUserName("userA"))
                 .thenReturn(List.of(userAPlan));
 
         List<VoluntaryPlan> result = voluntaryPlanService.listUserPlans("userA");
@@ -158,8 +158,8 @@ class VoluntaryPlanUserIsolationTest {
         assertEquals("userA", result.get(0).getUserName());
 
         // 验证没有查询userB的数据
-        verify(voluntaryPlanMapper).selectByUserName("userA");
-        verify(voluntaryPlanMapper, never()).selectByUserName("userB");
+        verify(voluntaryPlanMapper).selectRealPlansByUserName("userA");
+        verify(voluntaryPlanMapper, never()).selectRealPlansByUserName("userB");
     }
 
     @Test

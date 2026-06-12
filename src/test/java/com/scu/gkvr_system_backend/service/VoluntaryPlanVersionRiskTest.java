@@ -875,16 +875,16 @@ class VoluntaryPlanVersionRiskTest {
         @Test
         @DisplayName("listUserPlans: 只查询指定用户, SQL层隔离")
         void listUserPlans_onlyQueriesSpecifiedUser() {
-            when(voluntaryPlanMapper.selectByUserName("userA"))
+            when(voluntaryPlanMapper.selectRealPlansByUserName("userA"))
                     .thenReturn(List.of(buildPlan(1, "userA", "本科一批")));
 
             List<VoluntaryPlan> result = voluntaryPlanService.listUserPlans("userA");
             assertEquals(1, result.size());
 
             // 验证只查询了userA, 未查询其他用户
-            verify(voluntaryPlanMapper).selectByUserName("userA");
-            verify(voluntaryPlanMapper, never()).selectByUserName("userB");
-            verify(voluntaryPlanMapper, never()).selectByUserName("userC");
+            verify(voluntaryPlanMapper).selectRealPlansByUserName("userA");
+            verify(voluntaryPlanMapper, never()).selectRealPlansByUserName("userB");
+            verify(voluntaryPlanMapper, never()).selectRealPlansByUserName("userC");
         }
 
         @Test

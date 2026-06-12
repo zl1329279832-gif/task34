@@ -423,7 +423,7 @@ public class VoluntaryPlanServiceImpl extends ServiceImpl<VoluntaryPlanMapper, V
 
     @Override
     public List<VoluntaryPlan> listUserPlans(String userName) {
-        return this.baseMapper.selectByUserName(userName);
+        return this.baseMapper.selectRealPlansByUserName(userName);
     }
 
     // ══════════════════════════════════════════
